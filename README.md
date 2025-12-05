@@ -30,6 +30,8 @@
 - 📋 **Minha Lista** - Guarda os títulos que queres ver
 - 🎬 **Filtros** - Filtra por filmes, séries ou já vistos
 - ✅ **Marcar como Visto** - Acompanha o teu progresso
+- 🕐 **Histórico de Pesquisas** - Acede rapidamente às pesquisas recentes
+- 💾 **Cache Local** - Carregamento mais rápido com Room Database
 
 ## Screenshots
 
@@ -56,11 +58,48 @@
 | **MVVM** | Arquitetura |
 | **Hilt** | Dependency Injection |
 | **Retrofit** | HTTP Client |
+| **Room** | Base de dados local (cache) |
 | **Coil** | Image Loading |
 | **Firebase Auth** | Autenticação |
-| **Firebase Firestore** | Base de dados |
+| **Firebase Firestore** | Base de dados cloud |
 | **TMDB API** | Dados de filmes/séries |
 | **Navigation Compose** | Navegação |
+
+## Arquitetura
+
+A aplicação segue a arquitetura **MVVM (Model-View-ViewModel)** com **Clean Architecture**:
+
+```
+app/src/main/java/com/example/tagline/
+├── data/
+│   ├── api/              # Serviços de API (TMDB, WatchMode)
+│   ├── local/            # Room Database
+│   │   ├── dao/          # Data Access Objects
+│   │   └── entity/       # Entidades da base de dados
+│   ├── model/            # Modelos de dados
+│   └── repository/       # Repositórios (fonte única de dados)
+├── di/                   # Dependency Injection (Hilt modules)
+├── ui/
+│   ├── navigation/       # Navegação entre ecrãs
+│   ├── screens/          # Ecrãs da app (Composables + ViewModels)
+│   └── theme/            # Tema, cores e tipografia
+└── util/                 # Utilidades e extensões
+```
+
+### Cache Local (Room)
+
+A app utiliza Room Database para cache local:
+
+| Tabela | Descrição | Validade |
+|--------|-----------|----------|
+| `genres` | Lista de géneros | Permanente |
+| `cached_media` | Detalhes de filmes/séries | 24 horas |
+| `search_history` | Histórico de pesquisas | Últimas 20 |
+
+**Benefícios:**
+- Carregamento mais rápido dos detalhes já visitados
+- Histórico de pesquisas para acesso rápido
+- Menos chamadas à API (economia de dados)
 
 ## Configuração
 
@@ -91,22 +130,6 @@ WATCHMODE_API_KEY=a_tua_api_key
 ```
 
 4. Compila e executa no Android Studio
-
-## Estrutura do Projeto
-
-```
-app/src/main/java/com/example/tagline/
-├── data/
-│   ├── api/           # Serviços de API (TMDB, WatchMode)
-│   ├── model/         # Modelos de dados
-│   └── repository/    # Repositórios
-├── di/                # Dependency Injection (Hilt)
-├── ui/
-│   ├── navigation/    # Navegação
-│   ├── screens/       # Ecrãs da app
-│   └── theme/         # Tema e cores
-└── util/              # Utilidades
-```
 
 ## Autor
 
