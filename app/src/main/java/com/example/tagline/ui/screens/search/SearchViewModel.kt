@@ -2,10 +2,12 @@ package com.example.tagline.ui.screens.search
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.tagline.data.local.entity.SearchHistoryItem
 import com.example.tagline.data.model.MediaType
 import com.example.tagline.data.model.SavedItem
 import com.example.tagline.data.model.tmdb.SearchResult
 import com.example.tagline.data.repository.AuthRepository
+import com.example.tagline.data.repository.LocalCacheRepository
 import com.example.tagline.data.repository.SavedItemsRepository
 import com.example.tagline.data.repository.TmdbRepository
 import com.example.tagline.util.Resource
@@ -25,14 +27,17 @@ data class SearchUiState(
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
     val hasSearched: Boolean = false,
-    val savedItemIds: Set<Int> = emptySet()
+    val savedItemIds: Set<Int> = emptySet(),
+    val searchHistory: List<SearchHistoryItem> = emptyList(),
+    val showHistory: Boolean = false
 )
 
 @HiltViewModel
 class SearchViewModel @Inject constructor(
     private val tmdbRepository: TmdbRepository,
     private val savedItemsRepository: SavedItemsRepository,
-    private val authRepository: AuthRepository
+    private val authRepository: AuthRepository,
+    private val localCacheRepository: LocalCacheRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SearchUiState())
@@ -42,6 +47,7 @@ class SearchViewModel @Inject constructor(
 
     init {
         loadSavedItemIds()
+        loadSearchHistory()
     }
 
     private fun loadSavedItemIds() {
@@ -55,8 +61,19 @@ class SearchViewModel @Inject constructor(
         }
     }
 
+    private fun loadSearchHistory() {
+        viewModelScope.launch {
+            localCacheRepository.getRecentSearches().collect { history ->
+                _uiState.value = _uiState.value.copy(searchHistory = history)
+            }
+        }
+    }
+
     fun updateQuery(query: String) {
-        _uiState.value = _uiState.value.copy(query = query)
+        _uiState.value = _uiState.value.copy(
+            query = query,
+            showHistory = query.isEmpty() && _uiState.value.searchHistory.isNotEmpty()
+        )
         
         // Debounce search
         searchJob?.cancel()
@@ -68,7 +85,8 @@ class SearchViewModel @Inject constructor(
         } else if (query.isEmpty()) {
             _uiState.value = _uiState.value.copy(
                 results = emptyList(),
-                hasSearched = false
+                hasSearched = false,
+                showHistory = _uiState.value.searchHistory.isNotEmpty()
             )
         }
     }
@@ -80,7 +98,8 @@ class SearchViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(
                 isLoading = true,
-                errorMessage = null
+                errorMessage = null,
+                showHistory = false
             )
 
             when (val result = tmdbRepository.searchMulti(query)) {
@@ -103,6 +122,33 @@ class SearchViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    fun searchFromHistory(historyItem: SearchHistoryItem) {
+        _uiState.value = _uiState.value.copy(query = historyItem.query)
+        search()
+    }
+
+    fun deleteFromHistory(historyItem: SearchHistoryItem) {
+        viewModelScope.launch {
+            localCacheRepository.deleteSearchQuery(historyItem.query)
+        }
+    }
+
+    fun clearSearchHistory() {
+        viewModelScope.launch {
+            localCacheRepository.clearSearchHistory()
+        }
+    }
+
+    fun showSearchHistory() {
+        if (_uiState.value.searchHistory.isNotEmpty()) {
+            _uiState.value = _uiState.value.copy(showHistory = true)
+        }
+    }
+
+    fun hideSearchHistory() {
+        _uiState.value = _uiState.value.copy(showHistory = false)
     }
 
     fun addToList(searchResult: SearchResult) {
@@ -151,4 +197,3 @@ class SearchViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(errorMessage = null)
     }
 }
-

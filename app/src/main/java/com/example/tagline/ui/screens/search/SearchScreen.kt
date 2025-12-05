@@ -15,13 +15,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
+import com.example.tagline.data.local.entity.SearchHistoryItem
 import com.example.tagline.data.model.tmdb.SearchResult
 import com.example.tagline.ui.theme.PrimaryCrimson
 import com.example.tagline.ui.theme.RatingHigh
@@ -41,6 +41,7 @@ fun SearchScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showLogoutDialog by remember { mutableStateOf(false) }
+    var showClearHistoryDialog by remember { mutableStateOf(false) }
 
     if (showLogoutDialog) {
         AlertDialog(
@@ -60,6 +61,29 @@ fun SearchScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showLogoutDialog = false }) {
+                    Text("Cancelar")
+                }
+            }
+        )
+    }
+
+    if (showClearHistoryDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearHistoryDialog = false },
+            title = { Text("Limpar Histórico") },
+            text = { Text("Tens a certeza que queres apagar todo o histórico de pesquisas?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.clearSearchHistory()
+                        showClearHistoryDialog = false
+                    }
+                ) {
+                    Text("Limpar", color = PrimaryCrimson)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearHistoryDialog = false }) {
                     Text("Cancelar")
                 }
             }
@@ -109,6 +133,7 @@ fun SearchScreen(
                 query = uiState.query,
                 onQueryChange = viewModel::updateQuery,
                 onSearch = viewModel::search,
+                onFocus = viewModel::showSearchHistory,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp)
@@ -145,36 +170,27 @@ fun SearchScreen(
                         }
                     }
                 }
-                !uiState.hasSearched -> {
-                    // Initial state - show hint
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.padding(32.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Search,
-                                contentDescription = null,
-                                modifier = Modifier.size(80.dp),
-                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                text = "Pesquisa filmes e séries",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = "Adiciona-os à tua lista para nunca perderes nada!",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
-                            )
-                        }
-                    }
+                uiState.showHistory && uiState.searchHistory.isNotEmpty() -> {
+                    // Show search history
+                    SearchHistorySection(
+                        history = uiState.searchHistory,
+                        onItemClick = viewModel::searchFromHistory,
+                        onDeleteItem = viewModel::deleteFromHistory,
+                        onClearAll = { showClearHistoryDialog = true }
+                    )
+                }
+                !uiState.hasSearched && uiState.searchHistory.isEmpty() -> {
+                    // Initial state - show hint (no history)
+                    EmptySearchState()
+                }
+                !uiState.hasSearched && uiState.searchHistory.isNotEmpty() -> {
+                    // Show history if available
+                    SearchHistorySection(
+                        history = uiState.searchHistory,
+                        onItemClick = viewModel::searchFromHistory,
+                        onDeleteItem = viewModel::deleteFromHistory,
+                        onClearAll = { showClearHistoryDialog = true }
+                    )
                 }
                 uiState.results.isEmpty() -> {
                     Box(
@@ -226,10 +242,131 @@ fun SearchScreen(
 }
 
 @Composable
+private fun EmptySearchState() {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(32.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Search,
+                contentDescription = null,
+                modifier = Modifier.size(80.dp),
+                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f)
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "Pesquisa filmes e séries",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Adiciona-os à tua lista para nunca perderes nada!",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun SearchHistorySection(
+    history: List<SearchHistoryItem>,
+    onItemClick: (SearchHistoryItem) -> Unit,
+    onDeleteItem: (SearchHistoryItem) -> Unit,
+    onClearAll: () -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxSize()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Pesquisas recentes",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+            )
+            TextButton(onClick = onClearAll) {
+                Text(
+                    text = "Limpar tudo",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = PrimaryCrimson
+                )
+            }
+        }
+
+        LazyColumn(
+            contentPadding = PaddingValues(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            items(history) { item ->
+                SearchHistoryItemRow(
+                    item = item,
+                    onClick = { onItemClick(item) },
+                    onDelete = { onDeleteItem(item) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SearchHistoryItemRow(
+    item: SearchHistoryItem,
+    onClick: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = Icons.Default.History,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+            modifier = Modifier.size(20.dp)
+        )
+        Spacer(modifier = Modifier.width(16.dp))
+        Text(
+            text = item.query,
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.weight(1f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        IconButton(
+            onClick = onDelete,
+            modifier = Modifier.size(32.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "Remover",
+                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                modifier = Modifier.size(18.dp)
+            )
+        }
+    }
+}
+
+@Composable
 private fun SearchBar(
     query: String,
     onQueryChange: (String) -> Unit,
     onSearch: () -> Unit,
+    onFocus: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     OutlinedTextField(
@@ -393,4 +530,3 @@ private fun SearchResultCard(
         }
     }
 }
-
