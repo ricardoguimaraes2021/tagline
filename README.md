@@ -31,6 +31,22 @@
 - 🎬 **Filtros** - Filtra por filmes, séries ou já vistos
 - ✅ **Marcar como Visto** - Acompanha o teu progresso
 
+## Screenshots
+
+<p align="center">
+  <img src="screenshots/01_login.png" width="200" alt="Login"/>
+  <img src="screenshots/02_search.png" width="200" alt="Pesquisa"/>
+  <img src="screenshots/03_search_results.png" width="200" alt="Resultados"/>
+  <img src="screenshots/04_details.png" width="200" alt="Detalhes"/>
+</p>
+
+<p align="center">
+  <img src="screenshots/05_details_providers.png" width="200" alt="Onde Assistir"/>
+  <img src="screenshots/06_my_list.png" width="200" alt="Minha Lista"/>
+  <img src="screenshots/07_my_list_series.png" width="200" alt="Séries"/>
+  <img src="screenshots/08_my_list_watched.png" width="200" alt="Vistos"/>
+</p>
+
 ## Tecnologias
 
 | Tecnologia | Descrição |
@@ -45,10 +61,6 @@
 | **Firebase Firestore** | Base de dados |
 | **TMDB API** | Dados de filmes/séries |
 | **Navigation Compose** | Navegação |
-
-## Screenshots
-
-*Em breve*
 
 ## Configuração
 
@@ -103,4 +115,3 @@ app/src/main/java/com/example/tagline/
 ## Licença
 
 Este projeto foi desenvolvido para fins académicos.
-
