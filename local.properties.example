@@ -1,0 +1,12 @@
+# Copiar este ficheiro para local.properties e preencher com as suas API keys
+# NAO FAZER COMMIT DO local.properties!
+
+# SDK path (gerado automaticamente pelo Android Studio)
+sdk.dir=C\:\\Users\\YOUR_USER\\AppData\\Local\\Android\\Sdk
+
+# TMDB API Key - Obter em: https://www.themoviedb.org/settings/api
+TMDB_API_KEY=your_tmdb_api_key_here
+
+# WatchMode API Key - Obter em: https://api.watchmode.com/
+WATCHMODE_API_KEY=your_watchmode_api_key_here
+
