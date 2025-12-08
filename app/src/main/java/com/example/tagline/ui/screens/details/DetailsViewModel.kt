@@ -2,22 +2,22 @@ package com.example.tagline.ui.screens.details
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.tagline.data.model.MediaType
-import com.example.tagline.data.model.SavedItem
-import com.example.tagline.data.model.tmdb.CountryWatchProviders
-import com.example.tagline.data.model.tmdb.Genre
-import com.example.tagline.data.model.tmdb.MovieDetailsResponse
-import com.example.tagline.data.model.tmdb.TvDetailsResponse
-import com.example.tagline.data.model.tmdb.WatchProvider
-import com.example.tagline.data.repository.SavedItemsRepository
-import com.example.tagline.data.repository.TmdbRepository
-import com.example.tagline.util.Constants
+import com.example.tagline.domain.model.CountryWatchProviders
+import com.example.tagline.domain.model.Genre
+import com.example.tagline.domain.model.MediaType
+import com.example.tagline.domain.model.SavedMedia
+import com.example.tagline.domain.usecase.AddToListUseCase
+import com.example.tagline.domain.usecase.CheckItemSavedUseCase
+import com.example.tagline.domain.usecase.GetMovieDetailsUseCase
+import com.example.tagline.domain.usecase.GetTvDetailsUseCase
+import com.example.tagline.domain.usecase.GetWatchProvidersUseCase
 import com.example.tagline.util.Resource
-import com.google.firebase.Timestamp
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -46,8 +46,11 @@ data class DetailsUiState(
 
 @HiltViewModel
 class DetailsViewModel @Inject constructor(
-    private val tmdbRepository: TmdbRepository,
-    private val savedItemsRepository: SavedItemsRepository
+    private val getMovieDetailsUseCase: GetMovieDetailsUseCase,
+    private val getTvDetailsUseCase: GetTvDetailsUseCase,
+    private val getWatchProvidersUseCase: GetWatchProvidersUseCase,
+    private val addToListUseCase: AddToListUseCase,
+    private val checkItemSavedUseCase: CheckItemSavedUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DetailsUiState())
@@ -61,14 +64,18 @@ class DetailsViewModel @Inject constructor(
 
         viewModelScope.launch {
             // Check if saved
-            val isSaved = savedItemsRepository.isItemSaved(movieId, MediaType.MOVIE)
+            val isSaved = checkItemSavedUseCase(movieId, MediaType.MOVIE)
             _uiState.value = _uiState.value.copy(isSaved = isSaved)
+        }
 
-            // Load movie details
-            when (val result = tmdbRepository.getMovieDetails(movieId)) {
-                is Resource.Success -> {
-                    result.data?.let { movie ->
-                        _uiState.value = _uiState.value.copy(
+        // Load movie details
+        getMovieDetailsUseCase(movieId)
+            .onEach { result ->
+                _uiState.value = when (result) {
+                    is Resource.Loading -> _uiState.value.copy(isLoading = true)
+                    is Resource.Success -> {
+                        val movie = result.data!!
+                        _uiState.value.copy(
                             isLoading = false,
                             title = movie.title,
                             originalTitle = movie.originalTitle,
@@ -76,33 +83,30 @@ class DetailsViewModel @Inject constructor(
                             posterPath = movie.posterPath,
                             backdropPath = movie.backdropPath,
                             releaseDate = movie.releaseDate,
-                            rating = movie.voteAverage,
+                            rating = movie.rating,
                             voteCount = movie.voteCount,
-                            runtime = movie.runtime?.let { "${it}min" },
+                            runtime = movie.formattedRuntime,
                             genres = movie.genres,
                             tagline = movie.tagline,
                             status = movie.status
                         )
                     }
-                }
-                is Resource.Error -> {
-                    _uiState.value = _uiState.value.copy(
+                    is Resource.Error -> _uiState.value.copy(
                         isLoading = false,
                         errorMessage = result.message
                     )
                 }
-                is Resource.Loading -> { }
             }
+            .launchIn(viewModelScope)
 
-            // Load watch providers
-            when (val result = tmdbRepository.getMovieWatchProviders(movieId)) {
-                is Resource.Success -> {
-                    val providers = result.data?.results?.get(Constants.DEFAULT_COUNTRY)
-                    _uiState.value = _uiState.value.copy(watchProviders = providers)
+        // Load watch providers
+        getWatchProvidersUseCase(movieId, MediaType.MOVIE)
+            .onEach { result ->
+                if (result is Resource.Success) {
+                    _uiState.value = _uiState.value.copy(watchProviders = result.data)
                 }
-                else -> { }
             }
-        }
+            .launchIn(viewModelScope)
     }
 
     fun loadTvDetails(seriesId: Int) {
@@ -111,14 +115,18 @@ class DetailsViewModel @Inject constructor(
 
         viewModelScope.launch {
             // Check if saved
-            val isSaved = savedItemsRepository.isItemSaved(seriesId, MediaType.TV)
+            val isSaved = checkItemSavedUseCase(seriesId, MediaType.TV)
             _uiState.value = _uiState.value.copy(isSaved = isSaved)
+        }
 
-            // Load TV details
-            when (val result = tmdbRepository.getTvDetails(seriesId)) {
-                is Resource.Success -> {
-                    result.data?.let { tv ->
-                        _uiState.value = _uiState.value.copy(
+        // Load TV details
+        getTvDetailsUseCase(seriesId)
+            .onEach { result ->
+                _uiState.value = when (result) {
+                    is Resource.Loading -> _uiState.value.copy(isLoading = true)
+                    is Resource.Success -> {
+                        val tv = result.data!!
+                        _uiState.value.copy(
                             isLoading = false,
                             title = tv.name,
                             originalTitle = tv.originalName,
@@ -126,9 +134,9 @@ class DetailsViewModel @Inject constructor(
                             posterPath = tv.posterPath,
                             backdropPath = tv.backdropPath,
                             releaseDate = tv.firstAirDate,
-                            rating = tv.voteAverage,
+                            rating = tv.rating,
                             voteCount = tv.voteCount,
-                            runtime = tv.episodeRunTime?.firstOrNull()?.let { "${it}min/ep" },
+                            runtime = tv.formattedRuntime,
                             genres = tv.genres,
                             tagline = tv.tagline,
                             status = tv.status,
@@ -136,64 +144,57 @@ class DetailsViewModel @Inject constructor(
                             numberOfEpisodes = tv.numberOfEpisodes
                         )
                     }
-                }
-                is Resource.Error -> {
-                    _uiState.value = _uiState.value.copy(
+                    is Resource.Error -> _uiState.value.copy(
                         isLoading = false,
                         errorMessage = result.message
                     )
                 }
-                is Resource.Loading -> { }
             }
+            .launchIn(viewModelScope)
 
-            // Load watch providers
-            when (val result = tmdbRepository.getTvWatchProviders(seriesId)) {
-                is Resource.Success -> {
-                    val providers = result.data?.results?.get(Constants.DEFAULT_COUNTRY)
-                    _uiState.value = _uiState.value.copy(watchProviders = providers)
+        // Load watch providers
+        getWatchProvidersUseCase(seriesId, MediaType.TV)
+            .onEach { result ->
+                if (result is Resource.Success) {
+                    _uiState.value = _uiState.value.copy(watchProviders = result.data)
                 }
-                else -> { }
             }
-        }
+            .launchIn(viewModelScope)
     }
 
     fun addToList() {
         val state = _uiState.value
         if (state.isSaved || state.isAddingToList) return
 
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isAddingToList = true)
+        _uiState.value = _uiState.value.copy(isAddingToList = true)
 
-            val item = SavedItem(
-                tmdbId = currentTmdbId,
-                title = state.title,
-                type = state.mediaType,
-                posterPath = state.posterPath,
-                backdropPath = state.backdropPath,
-                rating = state.rating,
-                genres = state.genres.map { it.name },
-                genreIds = state.genres.map { it.id },
-                overview = state.overview,
-                releaseYear = state.releaseDate?.take(4),
-                addedAt = Timestamp.now()
-            )
+        val item = SavedMedia(
+            tmdbId = currentTmdbId,
+            title = state.title,
+            type = state.mediaType,
+            posterPath = state.posterPath,
+            backdropPath = state.backdropPath,
+            rating = state.rating,
+            genres = state.genres.map { it.name },
+            genreIds = state.genres.map { it.id },
+            overview = state.overview,
+            releaseYear = state.releaseDate?.take(4)
+        )
 
-            when (val result = savedItemsRepository.addItem(item)) {
-                is Resource.Success -> {
-                    _uiState.value = _uiState.value.copy(
+        addToListUseCase(item)
+            .onEach { result ->
+                _uiState.value = when (result) {
+                    is Resource.Success -> _uiState.value.copy(
                         isSaved = true,
                         isAddingToList = false
                     )
-                }
-                is Resource.Error -> {
-                    _uiState.value = _uiState.value.copy(
+                    is Resource.Error -> _uiState.value.copy(
                         isAddingToList = false,
                         errorMessage = result.message
                     )
+                    is Resource.Loading -> _uiState.value
                 }
-                is Resource.Loading -> { }
             }
-        }
+            .launchIn(viewModelScope)
     }
 }
-

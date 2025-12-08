@@ -21,8 +21,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
-import com.example.tagline.data.local.entity.SearchHistoryItem
-import com.example.tagline.data.model.tmdb.SearchResult
+import com.example.tagline.domain.model.Media
+import com.example.tagline.domain.model.MediaType
+import com.example.tagline.domain.repository.SearchHistoryItem
 import com.example.tagline.ui.theme.PrimaryCrimson
 import com.example.tagline.ui.theme.RatingHigh
 import com.example.tagline.ui.theme.RatingLow
@@ -220,10 +221,10 @@ fun SearchScreen(
                     ) {
                         items(uiState.results) { result ->
                             SearchResultCard(
-                                result = result,
+                                media = result,
                                 isSaved = viewModel.isItemSaved(result.id),
                                 onClick = {
-                                    if (result.mediaType == "movie") {
+                                    if (result.mediaType == MediaType.MOVIE) {
                                         onNavigateToMovieDetails(result.id)
                                     } else {
                                         onNavigateToTvDetails(result.id)
@@ -401,7 +402,7 @@ private fun SearchBar(
 
 @Composable
 private fun SearchResultCard(
-    result: SearchResult,
+    media: Media,
     isSaved: Boolean,
     onClick: () -> Unit,
     onAddClick: () -> Unit
@@ -428,8 +429,8 @@ private fun SearchResultCard(
                     .fillMaxHeight()
             ) {
                 AsyncImage(
-                    model = result.posterPath.toFullPosterUrl(),
-                    contentDescription = result.displayTitle,
+                    model = media.posterPath.toFullPosterUrl(),
+                    contentDescription = media.title,
                     modifier = Modifier
                         .fillMaxSize()
                         .clip(RoundedCornerShape(topStart = 12.dp, bottomStart = 12.dp)),
@@ -442,13 +443,13 @@ private fun SearchResultCard(
                         .padding(4.dp)
                         .align(Alignment.TopStart)
                         .background(
-                            color = if (result.mediaType == "movie") PrimaryCrimson else SecondaryGold,
+                            color = if (media.mediaType == MediaType.MOVIE) PrimaryCrimson else SecondaryGold,
                             shape = RoundedCornerShape(4.dp)
                         )
                         .padding(horizontal = 6.dp, vertical = 2.dp)
                 ) {
                     Text(
-                        text = if (result.mediaType == "movie") "FILME" else "SÉRIE",
+                        text = if (media.mediaType == MediaType.MOVIE) "FILME" else "SÉRIE",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onPrimary,
                         fontWeight = FontWeight.Bold
@@ -466,14 +467,14 @@ private fun SearchResultCard(
             ) {
                 Column {
                     Text(
-                        text = result.displayTitle,
+                        text = media.title,
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
                     
-                    result.year?.let { year ->
+                    media.year?.let { year ->
                         Text(
                             text = year,
                             style = MaterialTheme.typography.bodySmall,
@@ -485,7 +486,8 @@ private fun SearchResultCard(
                 Row(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    result.voteAverage?.let { rating ->
+                    val rating = media.rating
+                    if (rating > 0) {
                         val ratingColor = when {
                             rating >= 7.0 -> RatingHigh
                             rating >= 5.0 -> RatingMedium

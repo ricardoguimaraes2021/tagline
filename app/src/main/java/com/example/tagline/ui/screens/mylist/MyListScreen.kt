@@ -23,8 +23,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
-import com.example.tagline.data.model.MediaType
-import com.example.tagline.data.model.SavedItem
+import com.example.tagline.domain.model.MediaType
+import com.example.tagline.domain.model.SavedMedia
 import com.example.tagline.ui.theme.*
 import com.example.tagline.util.toFullPosterUrl
 
@@ -37,7 +37,7 @@ fun MyListScreen(
     viewModel: MyListViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    var itemToDelete by remember { mutableStateOf<SavedItem?>(null) }
+    var itemToDelete by remember { mutableStateOf<SavedMedia?>(null) }
 
     // Delete confirmation dialog
     itemToDelete?.let { item ->
@@ -339,7 +339,7 @@ fun MyListScreen(
 
 @Composable
 private fun SavedItemCard(
-    item: SavedItem,
+    item: SavedMedia,
     onClick: () -> Unit,
     onToggleWatched: () -> Unit,
     onDelete: () -> Unit
@@ -496,4 +496,3 @@ private fun SavedItemCard(
         }
     }
 }
-

@@ -26,7 +26,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
-import com.example.tagline.data.model.tmdb.WatchProvider
+import com.example.tagline.domain.model.WatchProvider
 import com.example.tagline.ui.theme.*
 import com.example.tagline.util.toFullBackdropUrl
 import com.example.tagline.util.toFullPosterUrl
@@ -367,41 +367,41 @@ private fun DetailsScreenContent(
                             Spacer(modifier = Modifier.height(12.dp))
 
                             // Subscription services
-                            providers.flatrate?.let { flatrate ->
+                            if (providers.flatrate.isNotEmpty()) {
                                 WatchProviderSection(
                                     title = "Streaming",
-                                    providers = flatrate
+                                    providers = providers.flatrate
                                 )
                             }
 
                             // Rent
-                            providers.rent?.let { rent ->
+                            if (providers.rent.isNotEmpty()) {
                                 WatchProviderSection(
                                     title = "Alugar",
-                                    providers = rent
+                                    providers = providers.rent
                                 )
                             }
 
                             // Buy
-                            providers.buy?.let { buy ->
+                            if (providers.buy.isNotEmpty()) {
                                 WatchProviderSection(
                                     title = "Comprar",
-                                    providers = buy
+                                    providers = providers.buy
                                 )
                             }
 
                             // Free
-                            providers.free?.let { free ->
+                            if (providers.free.isNotEmpty()) {
                                 WatchProviderSection(
                                     title = "Grátis",
-                                    providers = free
+                                    providers = providers.free
                                 )
                             }
 
-                            if (providers.flatrate == null && 
-                                providers.rent == null && 
-                                providers.buy == null && 
-                                providers.free == null) {
+                            if (providers.flatrate.isEmpty() && 
+                                providers.rent.isEmpty() && 
+                                providers.buy.isEmpty() && 
+                                providers.free.isEmpty()) {
                                 Text(
                                     text = "Não disponível em plataformas de streaming em Portugal",
                                     style = MaterialTheme.typography.bodyMedium,
@@ -470,7 +470,7 @@ private fun WatchProviderSection(
                 ) {
                     AsyncImage(
                         model = provider.logoPath.toProviderLogoUrl(),
-                        contentDescription = provider.providerName,
+                        contentDescription = provider.name,
                         modifier = Modifier
                             .size(48.dp)
                             .clip(RoundedCornerShape(8.dp)),
@@ -478,7 +478,7 @@ private fun WatchProviderSection(
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = provider.providerName,
+                        text = provider.name,
                         style = MaterialTheme.typography.labelSmall,
                         maxLines = 1,
                         modifier = Modifier.widthIn(max = 60.dp)
@@ -488,4 +488,3 @@ private fun WatchProviderSection(
         }
     }
 }
-

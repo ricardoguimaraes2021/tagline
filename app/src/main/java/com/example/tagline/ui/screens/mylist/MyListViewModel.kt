@@ -2,16 +2,20 @@ package com.example.tagline.ui.screens.mylist
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.tagline.data.model.MediaType
-import com.example.tagline.data.model.SavedItem
-import com.example.tagline.data.repository.SavedItemsRepository
-import com.example.tagline.data.repository.TmdbRepository
+import com.example.tagline.domain.model.Genre
+import com.example.tagline.domain.model.MediaType
+import com.example.tagline.domain.model.SavedMedia
+import com.example.tagline.domain.usecase.GetAllGenresUseCase
+import com.example.tagline.domain.usecase.GetSavedItemsUseCase
+import com.example.tagline.domain.usecase.RemoveFromListUseCase
+import com.example.tagline.domain.usecase.ToggleWatchedUseCase
 import com.example.tagline.util.Resource
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import javax.inject.Inject
 
 enum class FilterType {
@@ -19,8 +23,8 @@ enum class FilterType {
 }
 
 data class MyListUiState(
-    val items: List<SavedItem> = emptyList(),
-    val filteredItems: List<SavedItem> = emptyList(),
+    val items: List<SavedMedia> = emptyList(),
+    val filteredItems: List<SavedMedia> = emptyList(),
     val isLoading: Boolean = true,
     val errorMessage: String? = null,
     val filterType: FilterType = FilterType.ALL,
@@ -32,8 +36,10 @@ data class MyListUiState(
 
 @HiltViewModel
 class MyListViewModel @Inject constructor(
-    private val savedItemsRepository: SavedItemsRepository,
-    private val tmdbRepository: TmdbRepository
+    private val getSavedItemsUseCase: GetSavedItemsUseCase,
+    private val getAllGenresUseCase: GetAllGenresUseCase,
+    private val toggleWatchedUseCase: ToggleWatchedUseCase,
+    private val removeFromListUseCase: RemoveFromListUseCase
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(MyListUiState())
@@ -45,42 +51,36 @@ class MyListViewModel @Inject constructor(
     }
 
     private fun loadItems() {
-        viewModelScope.launch {
-            savedItemsRepository.getSavedItems().collect { result ->
-                when (result) {
-                    is Resource.Loading -> {
-                        _uiState.value = _uiState.value.copy(isLoading = true)
-                    }
+        getSavedItemsUseCase()
+            .onEach { result ->
+                _uiState.value = when (result) {
+                    is Resource.Loading -> _uiState.value.copy(isLoading = true)
                     is Resource.Success -> {
                         val items = result.data ?: emptyList()
-                        _uiState.value = _uiState.value.copy(
+                        _uiState.value.copy(
                             items = items,
                             isLoading = false,
                             errorMessage = null
-                        )
-                        applyFilters()
+                        ).also { applyFilters() }
                     }
-                    is Resource.Error -> {
-                        _uiState.value = _uiState.value.copy(
-                            isLoading = false,
-                            errorMessage = result.message
-                        )
-                    }
+                    is Resource.Error -> _uiState.value.copy(
+                        isLoading = false,
+                        errorMessage = result.message
+                    )
                 }
             }
-        }
+            .launchIn(viewModelScope)
     }
 
     private fun loadGenres() {
-        viewModelScope.launch {
-            when (val result = tmdbRepository.getAllGenres()) {
-                is Resource.Success -> {
+        getAllGenresUseCase()
+            .onEach { result ->
+                if (result is Resource.Success) {
                     val genres = result.data?.map { it.name } ?: emptyList()
                     _uiState.value = _uiState.value.copy(genres = genres)
                 }
-                else -> { }
             }
-        }
+            .launchIn(viewModelScope)
     }
 
     fun setFilterType(filterType: FilterType) {
@@ -138,16 +138,14 @@ class MyListViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(filteredItems = filtered)
     }
 
-    fun toggleWatched(item: SavedItem) {
-        viewModelScope.launch {
-            savedItemsRepository.toggleWatched(item.id, !item.watched)
-        }
+    fun toggleWatched(item: SavedMedia) {
+        toggleWatchedUseCase(item.id, !item.watched)
+            .launchIn(viewModelScope)
     }
 
-    fun removeItem(item: SavedItem) {
-        viewModelScope.launch {
-            savedItemsRepository.removeItem(item.id)
-        }
+    fun removeItem(item: SavedMedia) {
+        removeFromListUseCase(item.id)
+            .launchIn(viewModelScope)
     }
 
     fun clearFilters() {
@@ -160,4 +158,3 @@ class MyListViewModel @Inject constructor(
         applyFilters()
     }
 }
-

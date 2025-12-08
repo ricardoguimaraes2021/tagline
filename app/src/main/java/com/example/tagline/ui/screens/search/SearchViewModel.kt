@@ -2,28 +2,31 @@ package com.example.tagline.ui.screens.search
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.tagline.data.local.entity.SearchHistoryItem
-import com.example.tagline.data.model.MediaType
-import com.example.tagline.data.model.SavedItem
-import com.example.tagline.data.model.tmdb.SearchResult
-import com.example.tagline.data.repository.AuthRepository
-import com.example.tagline.data.repository.LocalCacheRepository
-import com.example.tagline.data.repository.SavedItemsRepository
-import com.example.tagline.data.repository.TmdbRepository
+import com.example.tagline.domain.model.Media
+import com.example.tagline.domain.model.MediaType
+import com.example.tagline.domain.model.SavedMedia
+import com.example.tagline.domain.repository.SearchHistoryItem
+import com.example.tagline.domain.usecase.AddToListUseCase
+import com.example.tagline.domain.usecase.DeleteSearchHistoryUseCase
+import com.example.tagline.domain.usecase.GetSavedItemsUseCase
+import com.example.tagline.domain.usecase.GetSearchHistoryUseCase
+import com.example.tagline.domain.usecase.SearchMediaUseCase
+import com.example.tagline.domain.repository.AuthRepository
 import com.example.tagline.util.Resource
-import com.google.firebase.Timestamp
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 data class SearchUiState(
     val query: String = "",
-    val results: List<SearchResult> = emptyList(),
+    val results: List<Media> = emptyList(),
     val isLoading: Boolean = false,
     val errorMessage: String? = null,
     val hasSearched: Boolean = false,
@@ -34,10 +37,12 @@ data class SearchUiState(
 
 @HiltViewModel
 class SearchViewModel @Inject constructor(
-    private val tmdbRepository: TmdbRepository,
-    private val savedItemsRepository: SavedItemsRepository,
-    private val authRepository: AuthRepository,
-    private val localCacheRepository: LocalCacheRepository
+    private val searchMediaUseCase: SearchMediaUseCase,
+    private val getSavedItemsUseCase: GetSavedItemsUseCase,
+    private val addToListUseCase: AddToListUseCase,
+    private val getSearchHistoryUseCase: GetSearchHistoryUseCase,
+    private val deleteSearchHistoryUseCase: DeleteSearchHistoryUseCase,
+    private val authRepository: AuthRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SearchUiState())
@@ -51,22 +56,26 @@ class SearchViewModel @Inject constructor(
     }
 
     private fun loadSavedItemIds() {
-        viewModelScope.launch {
-            savedItemsRepository.getSavedItems().collect { result ->
+        getSavedItemsUseCase()
+            .onEach { result ->
                 if (result is Resource.Success) {
                     val ids = result.data?.map { it.tmdbId }?.toSet() ?: emptySet()
                     _uiState.value = _uiState.value.copy(savedItemIds = ids)
                 }
             }
-        }
+            .launchIn(viewModelScope)
     }
 
     private fun loadSearchHistory() {
-        viewModelScope.launch {
-            localCacheRepository.getRecentSearches().collect { history ->
-                _uiState.value = _uiState.value.copy(searchHistory = history)
+        getSearchHistoryUseCase()
+            .onEach { result ->
+                if (result is Resource.Success) {
+                    _uiState.value = _uiState.value.copy(
+                        searchHistory = result.data ?: emptyList()
+                    )
+                }
             }
-        }
+            .launchIn(viewModelScope)
     }
 
     fun updateQuery(query: String) {
@@ -95,33 +104,27 @@ class SearchViewModel @Inject constructor(
         val query = _uiState.value.query
         if (query.isBlank()) return
 
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(
-                isLoading = true,
-                errorMessage = null,
-                showHistory = false
-            )
-
-            when (val result = tmdbRepository.searchMulti(query)) {
-                is Resource.Success -> {
-                    _uiState.value = _uiState.value.copy(
+        searchMediaUseCase(query)
+            .onEach { result ->
+                _uiState.value = when (result) {
+                    is Resource.Loading -> _uiState.value.copy(
+                        isLoading = true,
+                        errorMessage = null,
+                        showHistory = false
+                    )
+                    is Resource.Success -> _uiState.value.copy(
                         results = result.data?.results ?: emptyList(),
                         isLoading = false,
                         hasSearched = true
                     )
-                }
-                is Resource.Error -> {
-                    _uiState.value = _uiState.value.copy(
+                    is Resource.Error -> _uiState.value.copy(
                         isLoading = false,
                         errorMessage = result.message,
                         hasSearched = true
                     )
                 }
-                is Resource.Loading -> {
-                    // Already handled above
-                }
             }
-        }
+            .launchIn(viewModelScope)
     }
 
     fun searchFromHistory(historyItem: SearchHistoryItem) {
@@ -131,13 +134,13 @@ class SearchViewModel @Inject constructor(
 
     fun deleteFromHistory(historyItem: SearchHistoryItem) {
         viewModelScope.launch {
-            localCacheRepository.deleteSearchQuery(historyItem.query)
+            deleteSearchHistoryUseCase.deleteQuery(historyItem.query)
         }
     }
 
     fun clearSearchHistory() {
         viewModelScope.launch {
-            localCacheRepository.clearSearchHistory()
+            deleteSearchHistoryUseCase.clearAll()
         }
     }
 
@@ -151,38 +154,37 @@ class SearchViewModel @Inject constructor(
         _uiState.value = _uiState.value.copy(showHistory = false)
     }
 
-    fun addToList(searchResult: SearchResult) {
-        viewModelScope.launch {
-            val mediaType = MediaType.fromString(searchResult.mediaType)
-            val item = SavedItem(
-                tmdbId = searchResult.id,
-                title = searchResult.displayTitle,
-                type = mediaType,
-                posterPath = searchResult.posterPath,
-                backdropPath = searchResult.backdropPath,
-                rating = searchResult.voteAverage ?: 0.0,
-                genres = emptyList(), // Will be populated from details screen
-                genreIds = searchResult.genreIds ?: emptyList(),
-                overview = searchResult.overview,
-                releaseYear = searchResult.year,
-                addedAt = Timestamp.now()
-            )
+    fun addToList(media: Media) {
+        val item = SavedMedia(
+            tmdbId = media.id,
+            title = media.title,
+            type = media.mediaType,
+            posterPath = media.posterPath,
+            backdropPath = media.backdropPath,
+            rating = media.rating,
+            genres = emptyList(),
+            genreIds = media.genreIds,
+            overview = media.overview,
+            releaseYear = media.year
+        )
 
-            when (val result = savedItemsRepository.addItem(item)) {
-                is Resource.Success -> {
-                    // Update saved item IDs
-                    _uiState.value = _uiState.value.copy(
-                        savedItemIds = _uiState.value.savedItemIds + searchResult.id
-                    )
+        addToListUseCase(item)
+            .onEach { result ->
+                when (result) {
+                    is Resource.Success -> {
+                        _uiState.value = _uiState.value.copy(
+                            savedItemIds = _uiState.value.savedItemIds + media.id
+                        )
+                    }
+                    is Resource.Error -> {
+                        _uiState.value = _uiState.value.copy(
+                            errorMessage = result.message
+                        )
+                    }
+                    is Resource.Loading -> { }
                 }
-                is Resource.Error -> {
-                    _uiState.value = _uiState.value.copy(
-                        errorMessage = result.message
-                    )
-                }
-                is Resource.Loading -> { }
             }
-        }
+            .launchIn(viewModelScope)
     }
 
     fun isItemSaved(tmdbId: Int): Boolean {
